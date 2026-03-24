@@ -148,6 +148,7 @@ public class LevelManager : MonoBehaviour
     private void Start()
     {
         ApplyDifficultySettings();
+        TrySyncRoadToEnemyPath();
         SetCurrentLives(_maxLives);
         SetGold(_startGold);
         InstantiateAllTowerUI();
@@ -201,7 +202,7 @@ public class LevelManager : MonoBehaviour
         {
             if (!enemy.gameObject.activeSelf) continue;
 
-            if (Vector2.Distance(enemy.transform.position, enemy.TargetPosition) < 0.1f)
+            if ((enemy.transform.position - enemy.TargetPosition).sqrMagnitude < 0.0004f)
             {
                 int next = enemy.CurrentPathIndex + 1;
                 enemy.SetCurrentPathIndex(next);
@@ -225,6 +226,184 @@ public class LevelManager : MonoBehaviour
             Gizmos.color = Color.cyan;
             Gizmos.DrawLine(_enemyPaths[i].position, _enemyPaths[i + 1].position);
         }
+    }
+
+    private void TrySyncRoadToEnemyPath()
+    {
+        if (_enemyPaths == null || _enemyPaths.Length < 2) return;
+
+        Transform roadRoot = transform.Find("Road");
+        if (roadRoot == null) return;
+
+        // Rebuild the visual road from the live enemy route so the art matches gameplay.
+        if (!TryGetRoadTemplates(roadRoot, out SpriteRenderer horizontalTemplate,
+            out SpriteRenderer verticalTemplate, out SpriteRenderer cornerTemplate))
+            return;
+
+        Transform generatedRoot = roadRoot.Find("__AutoRoad");
+        if (generatedRoot == null)
+        {
+            generatedRoot = new GameObject("__AutoRoad").transform;
+            generatedRoot.SetParent(roadRoot, false);
+            generatedRoot.SetAsLastSibling();
+        }
+
+        ClearGeneratedRoad(generatedRoot);
+        DisableManualRoadPieces(roadRoot, generatedRoot);
+        BuildRoadSegments(generatedRoot, horizontalTemplate, verticalTemplate);
+        BuildRoadCorners(generatedRoot, cornerTemplate);
+    }
+
+    private bool TryGetRoadTemplates(
+        Transform roadRoot,
+        out SpriteRenderer horizontalTemplate,
+        out SpriteRenderer verticalTemplate,
+        out SpriteRenderer cornerTemplate)
+    {
+        horizontalTemplate = null;
+        verticalTemplate   = null;
+        cornerTemplate     = null;
+
+        SpriteRenderer[] renderers = roadRoot.GetComponentsInChildren<SpriteRenderer>(true);
+        foreach (SpriteRenderer renderer in renderers)
+        {
+            if (renderer.sprite == null) continue;
+
+            switch (renderer.sprite.name)
+            {
+                case "road_path_h":
+                    if (horizontalTemplate == null) horizontalTemplate = renderer;
+                    break;
+                case "road_path_v":
+                    if (verticalTemplate == null) verticalTemplate = renderer;
+                    break;
+                case "road_path_corner":
+                    if (cornerTemplate == null) cornerTemplate = renderer;
+                    break;
+            }
+        }
+
+        return horizontalTemplate != null &&
+               verticalTemplate != null &&
+               cornerTemplate != null;
+    }
+
+    private void ClearGeneratedRoad(Transform generatedRoot)
+    {
+        for (int i = generatedRoot.childCount - 1; i >= 0; i--)
+            Destroy(generatedRoot.GetChild(i).gameObject);
+    }
+
+    private void DisableManualRoadPieces(Transform roadRoot, Transform generatedRoot)
+    {
+        for (int i = 0; i < roadRoot.childCount; i++)
+        {
+            Transform child = roadRoot.GetChild(i);
+            if (child == generatedRoot) continue;
+            child.gameObject.SetActive(false);
+        }
+    }
+
+    private void BuildRoadSegments(
+        Transform generatedRoot,
+        SpriteRenderer horizontalTemplate,
+        SpriteRenderer verticalTemplate)
+    {
+        for (int i = 0; i < _enemyPaths.Length - 1; i++)
+        {
+            Vector3 from = _enemyPaths[i].position;
+            Vector3 to   = _enemyPaths[i + 1].position;
+            Vector3 mid  = (from + to) * 0.5f;
+
+            if (Mathf.Abs(to.x - from.x) >= Mathf.Abs(to.y - from.y))
+            {
+                float length = Mathf.Abs(to.x - from.x);
+                CreateRoadPiece(
+                    generatedRoot,
+                    $"road_segment_h_{i:00}",
+                    horizontalTemplate,
+                    mid,
+                    Quaternion.identity,
+                    new Vector2(length, horizontalTemplate.size.y));
+            }
+            else
+            {
+                float length = Mathf.Abs(to.y - from.y);
+                CreateRoadPiece(
+                    generatedRoot,
+                    $"road_segment_v_{i:00}",
+                    verticalTemplate,
+                    mid,
+                    Quaternion.identity,
+                    new Vector2(verticalTemplate.size.x, length));
+            }
+        }
+    }
+
+    private void BuildRoadCorners(Transform generatedRoot, SpriteRenderer cornerTemplate)
+    {
+        for (int i = 1; i < _enemyPaths.Length - 1; i++)
+        {
+            Vector2 inDir  = GetCardinalDirection(_enemyPaths[i].position - _enemyPaths[i - 1].position);
+            Vector2 outDir = GetCardinalDirection(_enemyPaths[i + 1].position - _enemyPaths[i].position);
+
+            if (inDir == outDir) continue;
+
+            CreateRoadPiece(
+                generatedRoot,
+                $"road_corner_{i:00}",
+                cornerTemplate,
+                _enemyPaths[i].position,
+                Quaternion.Euler(0f, 0f, GetCornerRotation(inDir, outDir)),
+                cornerTemplate.size);
+        }
+    }
+
+    private void CreateRoadPiece(
+        Transform parent,
+        string pieceName,
+        SpriteRenderer template,
+        Vector3 worldPosition,
+        Quaternion worldRotation,
+        Vector2 size)
+    {
+        GameObject piece = new GameObject(pieceName);
+        piece.transform.SetParent(parent, false);
+        piece.transform.position = worldPosition;
+        piece.transform.rotation = worldRotation;
+
+        SpriteRenderer renderer = piece.AddComponent<SpriteRenderer>();
+        renderer.sprite           = template.sprite;
+        renderer.sharedMaterial   = template.sharedMaterial;
+        renderer.color            = template.color;
+        renderer.drawMode         = template.drawMode;
+        renderer.size             = size;
+        renderer.maskInteraction  = template.maskInteraction;
+        renderer.sortingLayerID   = template.sortingLayerID;
+        renderer.sortingOrder     = template.sortingOrder;
+    }
+
+    private Vector2 GetCardinalDirection(Vector3 delta)
+    {
+        if (Mathf.Abs(delta.x) >= Mathf.Abs(delta.y))
+            return delta.x >= 0f ? Vector2.right : Vector2.left;
+
+        return delta.y >= 0f ? Vector2.up : Vector2.down;
+    }
+
+    private float GetCornerRotation(Vector2 inDir, Vector2 outDir)
+    {
+        if (MatchesTurn(inDir, outDir, Vector2.left, Vector2.down))  return 0f;
+        if (MatchesTurn(inDir, outDir, Vector2.up, Vector2.right))   return 180f;
+        if (MatchesTurn(inDir, outDir, Vector2.left, Vector2.up))    return -90f;
+        if (MatchesTurn(inDir, outDir, Vector2.down, Vector2.right)) return 90f;
+        return 0f;
+    }
+
+    private bool MatchesTurn(Vector2 inDir, Vector2 outDir, Vector2 first, Vector2 second)
+    {
+        return (inDir == first && outDir == second) ||
+               (inDir == second && outDir == first);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
