@@ -106,6 +106,7 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private Text _goldInfo;
 
     private int _gold;
+    private int _totalGoldEarned = 0;
     private bool _freeBuild  = false;
     private bool _freeMerge  = false;
     private float _goldBonusMultiplier = 1f;
@@ -132,6 +133,8 @@ public class LevelManager : MonoBehaviour
     [SerializeField] private GameObject _panel;
     [SerializeField] private Text       _statusInfo;
     [SerializeField] private Text       _waveInfo;
+    [SerializeField] private Text       _totalEnemyText;   
+    [SerializeField] private Text       _goldEarnedText; 
 
     public bool IsOver { get; private set; }
 
@@ -151,6 +154,8 @@ public class LevelManager : MonoBehaviour
         TrySyncRoadToEnemyPath();
         SetCurrentLives(_maxLives);
         SetGold(_startGold);
+        //_totalGoldEarned = 0;
+        //UpdateGoldEarnedUI();
         InstantiateAllTowerUI();
         CacheAllSlots();
 
@@ -169,6 +174,7 @@ public class LevelManager : MonoBehaviour
         {
             StartCoroutine(RunWaves());
         }
+        //UpdateTotalEnemyUI();
     }
 
     private void Update()
@@ -349,13 +355,25 @@ public class LevelManager : MonoBehaviour
 
             if (inDir == outDir) continue;
 
+
+            float additionalAngle = GetCornerRotation(inDir, outDir);
+            Quaternion finalRotation = cornerTemplate.transform.rotation * Quaternion.Euler(0, 0, additionalAngle);
+
             CreateRoadPiece(
                 generatedRoot,
                 $"road_corner_{i:00}",
                 cornerTemplate,
                 _enemyPaths[i].position,
-                Quaternion.Euler(0f, 0f, GetCornerRotation(inDir, outDir)),
+                finalRotation,
                 cornerTemplate.size);
+
+            /*CreateRoadPiece(
+                generatedRoot,
+                $"road_corner_{i:00}",
+                cornerTemplate,
+                _enemyPaths[i].position,
+                Quaternion.Euler(0f, 0f, GetCornerRotation(inDir, outDir)),
+                cornerTemplate.size);*/
         }
     }
 
@@ -393,11 +411,39 @@ public class LevelManager : MonoBehaviour
 
     private float GetCornerRotation(Vector2 inDir, Vector2 outDir)
     {
-        if (MatchesTurn(inDir, outDir, Vector2.left, Vector2.down))  return 0f;
+
+        
+        if (inDir == Vector2.left && outDir == Vector2.down)
+            return 90f;
+        if (inDir == Vector2.down && outDir == Vector2.left)
+            return -90f;
+
+        
+        if (inDir == Vector2.left && outDir == Vector2.up) 
+            return 180f;
+        if (inDir == Vector2.up && outDir == Vector2.left) 
+            return 0f;
+
+        
+        if (inDir == Vector2.down && outDir == Vector2.right)
+            return 180f;
+        if (inDir == Vector2.right && outDir == Vector2.down)
+            return 0f;
+
+        
+        //if (inDir == Vector2.right && outDir == Vector2.up) 
+        //    return 0f;
+        if (inDir == Vector2.up && outDir == Vector2.right)
+            return 90f;
+
+
+        return 0f;
+        
+        /*if (MatchesTurn(inDir, outDir, Vector2.left, Vector2.down))  return 0f;
         if (MatchesTurn(inDir, outDir, Vector2.up, Vector2.right))   return 180f;
         if (MatchesTurn(inDir, outDir, Vector2.left, Vector2.up))    return -90f;
         if (MatchesTurn(inDir, outDir, Vector2.down, Vector2.right)) return 90f;
-        return 0f;
+        return 0f;*/
     }
 
     private bool MatchesTurn(Vector2 inDir, Vector2 outDir, Vector2 first, Vector2 second)
@@ -829,6 +875,7 @@ public class LevelManager : MonoBehaviour
     {
         _gold = Mathf.Max(0, value);
         if (_goldInfo != null) _goldInfo.text = $"Золото: {_gold}";
+        //if (_currentGoldText != null) _currentGoldText.text = $"{_gold}";
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -865,5 +912,26 @@ public class LevelManager : MonoBehaviour
             _waveInfo.text = $"Враги: {Mathf.Max(_enemyCounter, 0)}";
         else
             _waveInfo.text = $"Волна: {_currentWaveIndex + 1} / {_waves.Length}";
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Apdate text functions / UI
+    // ─────────────────────────────────────────────────────────────────────────
+
+
+    private void UpdateTotalEnemyUI()
+    {
+        if (_totalEnemyText == null) return;
+        
+        if (_useFallbackSpawning)
+            _totalEnemyText.text = $"Enemy Left: {Mathf.Max(_enemyCounter, 0)}";
+        else
+            _totalEnemyText.text = $"Total Enemy: {Mathf.Max(_enemiesAliveInWave, 0)}";
+    }
+
+    private void UpdateGoldEarnedUI()
+    {
+        if (_goldEarnedText != null)
+            _goldEarnedText.text = $"Gold Earned: {_totalGoldEarned}";
     }
 }
