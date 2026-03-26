@@ -100,11 +100,11 @@ public class Enemy : MonoBehaviour
         _healthBar.transform.parent = null;
 
         Vector3 delta = TargetPosition - transform.position;
-        if (Mathf.Abs(delta.y) > Mathf.Abs(delta.x))
+        /*if (Mathf.Abs(delta.y) > Mathf.Abs(delta.x))
             transform.rotation = Quaternion.Euler(0f, 0f, delta.y > 0f ? 90f : -90f);
         else
             transform.rotation = Quaternion.Euler(0f, 0f, delta.x > 0f ? 0f : 180f);
-
+*/
         _healthBar.transform.parent = transform;
     }
 
